@@ -9,9 +9,9 @@ st.title('Mi Finanzas - Streamlit')
 
 BASE_DIR = Path(__file__).parent
 
-CATEGORIES_FILE = "/workspaces/gdp-dashboard/origen/desplegables.xlsx"
-OUTPUT_FILE =  "/workspaces/gdp-dashboard/destino/cuentas.xlsx"
-# Archivos
+CATEGORIES_FILE = "origen/desplegables.xlsx"
+OUTPUT_FILE =  "destino/cuentas.xlsx"
+# Archivos 
 
      
 
