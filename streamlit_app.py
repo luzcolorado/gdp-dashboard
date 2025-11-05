@@ -1,151 +1,154 @@
 import streamlit as st
-import pandas as pd
-import math
 from pathlib import Path
+import pandas as pd
+from datetime import datetime
+import os
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+st.set_page_config(page_title='Finanzas App', layout='centered')
+st.title('Mi Finanzas - Streamlit')
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+BASE_DIR = Path(__file__).parent
 
+CATEGORIES_FILE = "/workspaces/gdp-dashboard/origen/desplegables.xlsx"
+OUTPUT_FILE =  "/workspaces/gdp-dashboard/destino/cuentas.xlsx"
+# Archivos
+
+     
+
+# Cargar categorias
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+def load_categories(path):
+    if not os.path.exists(path):
+        st.error(f"No se encontró el archivo '{path}'. Sube el archivo y recarga la app.")
+        return pd.DataFrame(columns=['categoria_tipo_finanza', 'subcategoria_tipo_finanza', 'tipo_finanza'])
+    return pd.read_excel(path)
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+categorias_df = load_categories(CATEGORIES_FILE)
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+# Asegurar archivo de salida
+if not os.path.exists(OUTPUT_FILE):
+    df_init = pd.DataFrame(columns=[
+        'categoria_tipo_finanza',
+        'subcategoria_tipo_finanza',
+        'tipo_finanza',
+        'valor',
+        'observacion',
+        'fecha'
+    ])
+    df_init.to_excel(OUTPUT_FILE, index=False)
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+# Inicializar session state
+if 'categoria' not in st.session_state:
+    st.session_state['categoria'] = None
+if 'subcategoria' not in st.session_state:
+    st.session_state['subcategoria'] = None
+if 'tipo' not in st.session_state:
+    st.session_state['tipo'] = None
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+# --- Paso 1: Mostrar botones de categorias ---
+st.subheader('Selecciona el tipo de movimiento')
+unique_cats = categorias_df['categoria_tipo_finanza'].dropna().unique().tolist()
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
+# Mostrar botones en una fila (máx 5 por fila)
+cols = st.columns(min(len(unique_cats), 5))
+for i, cat in enumerate(unique_cats):
+    with cols[i % len(cols)]:
+        if st.button(cat):
+            st.session_state['categoria'] = cat
+            st.session_state['subcategoria'] = None
+            st.session_state['tipo'] = None
+            st.rerun()
 
-    return gdp_df
+# Botón para limpiar selección
+if st.session_state['categoria']:
+    if st.button('Volver al inicio'):
+        st.session_state['categoria'] = None
+        st.session_state['subcategoria'] = None
+        st.session_state['tipo'] = None
+        st.rerun()
 
-gdp_df = get_gdp_data()
+# --- Paso 2: Si seleccionó categoria, mostrar subcategorías ---
+if st.session_state['categoria']:
+    st.markdown('---')
+    st.subheader(f"Subcategorías para: {st.session_state['categoria']}")
+    df_sub = categorias_df[categorias_df['categoria_tipo_finanza'] == st.session_state['categoria']]
+    unique_subs = df_sub['subcategoria_tipo_finanza'].dropna().unique().tolist()
 
-# -----------------------------------------------------------------------------
-# Draw the actual page
+    if not unique_subs:
+        st.info('No hay subcategorías definidas para esta categoría.')
+    else:
+        sub_cols = st.columns(min(len(unique_subs), 5))
+        for i, sub in enumerate(unique_subs):
+            with sub_cols[i % len(sub_cols)]:
+                if st.button(sub):
+                    st.session_state['subcategoria'] = sub
+                    st.session_state['tipo'] = None
+                    st.rerun()
 
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
+# --- Paso 3: Si seleccionó subcategoria, mostrar formulario ---
+if st.session_state['categoria'] and st.session_state.get('subcategoria'):
+    st.markdown('---')
+    st.subheader(f"Registrar: {st.session_state['categoria']} → {st.session_state['subcategoria']}")
 
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
+    # tipos filtrados
+    df_tipo = categorias_df[
+        (categorias_df['categoria_tipo_finanza'] == st.session_state['categoria']) &
+        (categorias_df['subcategoria_tipo_finanza'] == st.session_state['subcategoria'])
+    ]
+    unique_tipos = df_tipo['tipo_finanza'].dropna().unique().tolist()
 
-# Add some spacing
-''
-''
+    tipo_seleccionado = st.selectbox('Tipo', options=unique_tipos if unique_tipos else ['No definido'])
+    valor = st.number_input('Valor', min_value=0.0, format='%f')
+    descripcion = st.text_input('Descripcion')
 
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
+    if st.button('Guardar'):
+        # Preparar registro
+        fecha = datetime.now().strftime('%d-%m-%Y')
+        nuevo = {
+            'categoria_tipo_finanza': st.session_state['categoria'],
+            'subcategoria_tipo_finanza': st.session_state['subcategoria'],
+            'tipo_finanza': tipo_seleccionado,
+            'valor': valor,
+            'observacion': descripcion,
+            'fecha': fecha
+        }
 
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
+        # Leer archivo existente y anexar
+        try:
+            df_exist = pd.read_excel(OUTPUT_FILE)
+        except Exception:
+            df_exist = pd.DataFrame(columns=['categoria_tipo_finanza','subcategoria_tipo_finanza','tipo_finanza','valor','observacion','fecha'])
 
-countries = gdp_df['Country Code'].unique()
+        df_exist = pd.concat([df_exist, pd.DataFrame([nuevo])], ignore_index=True)
+        df_exist.to_excel(OUTPUT_FILE, index=False)
 
-if not len(countries):
-    st.warning("Select at least one country")
+        st.success('Registro guardado correctamente.')
 
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
+        # Opción A: volver al inicio (limpiar todo)
+        st.session_state['categoria'] = None
+        st.session_state['subcategoria'] = None
+        st.session_state['tipo'] = None
+        st.rerun()
 
-''
-''
-''
+# --- Resumen rápido del estado actual ---
+st.markdown('---')
+st.subheader('Resumen rápido')
+try:
+    df_cuentas = pd.read_excel(OUTPUT_FILE)
+    if not df_cuentas.empty:
+        total_ingresos = df_cuentas[df_cuentas['categoria_tipo_finanza'].str.lower() == 'ingreso']['valor'].sum()
+        total_gastos = df_cuentas[df_cuentas['categoria_tipo_finanza'].str.lower() == 'gasto']['valor'].sum()
+        saldo = total_ingresos - total_gastos
 
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
+        st.metric('Total Ingresos', f"{total_ingresos:,.2f}")
+        st.metric('Total Gastos', f"{total_gastos:,.2f}")
+        st.metric('Saldo', f"{saldo:,.2f}")
 
-st.header('GDP over time', divider='gray')
+        with st.expander('Ver movimientos (últimos 10)'):
+            st.dataframe(df_cuentas.tail(10))
+    else:
+        st.info('No hay registros aún en cuentas.xlsx')
+except Exception as e:
+    st.error(f'Error leyendo {OUTPUT_FILE}: {e}')
 
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+# Nota: coloca los archivos desplegables.xlsx y cuentas.xlsx en el mismo directorio de la app para que funcione correctamente.
